@@ -18,7 +18,7 @@ const JUMP_VELOCITY = 5.0
 const BOUNCE_FORCE_UP = 5.0  # The bounce force when the player hits a wall
 const LEAP_FORCE = 50  # The bounce force when the player hits a wall
 
-var mouse_sensitivity : float = 0.0001
+var mouse_sensitivity : float = 0.002
 var lerp_speed : float = 13
 var current_dir = Vector2(0,0)
 
@@ -37,8 +37,8 @@ var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
 var is_jumping = false
 
 # Smooth interpolation factor
-var interpolation_speed = 4.0  # The speed at which the velocity interpolates towards the target velocity
-var interpolation_speed_air = 3.0  # The speed at which the velocity interpolates towards the target velocity
+var interpolation_speed = 8.0  # The speed at which the velocity interpolates towards the target velocity
+var interpolation_speed_air = 4.0  # The speed at which the velocity interpolates towards the target velocity
 var target_velocity = Vector3.ZERO  
 var grapple_velocity = Vector3.ZERO
 var final_velocity = Vector3.ZERO  
@@ -63,8 +63,10 @@ var alternatefire = false
 func _ready():
 	# Set the cursor to hidden for mouse look
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	animTree.active = true
 	animTree.set(\"parameters/StateMachine/conditions/Jumping\",false)
 	
+
 func _input(event):
 	# Check if the left mouse button was clicked
 	if !Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
@@ -102,7 +104,7 @@ func _physics_process(delta):
 	var mouse_movement : Vector2 = Input.get_last_mouse_velocity()
 
 	# Horizontal rotation (Y-axis) for the sphere
-	cameraNode.rotate_x(-mouse_movement.y * mouse_sensitivity)
+	cameraNode.rotate_x(-mouse_movement.y * mouse_sensitivity * delta)
 	
 	# Check for Escape key to release the mouse capture
 	if Input.is_action_just_pressed(\"ui_cancel\"):  # Escape button
@@ -111,6 +113,7 @@ func _physics_process(delta):
 	if Input.is_action_just_pressed(\"ui_accept\"):
 		if is_grappling:
 			is_grappling = false
+			velocity.y = 10.0
 			Grapplemesh.clear_surfaces()
 
 	# Handle jump (spacebar) - trigger on press and reset on release
@@ -197,7 +200,7 @@ func _physics_process(delta):
 	mouse_movement = Input.get_last_mouse_velocity()
 
 	# Horizontal rotation (Y-axis) for the camera
-	rotate_y(-mouse_movement.x * mouse_sensitivity)
+	rotate_y(-mouse_movement.x * mouse_sensitivity * delta)
 
 # Check if the player is colliding with an object
 func is_colliding() -> bool:
