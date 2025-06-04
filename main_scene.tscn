@@ -1,0 +1,560 @@
+[gd_scene load_steps=17 format=3 uid="uid://tt2of2ejfpqe"]
+
+[ext_resource type="PackedScene" uid="uid://b5g7jtbbibg5a" path="res://Catty.tscn" id="2_0jr8n"]
+[ext_resource type="Texture2D" uid="uid://bdwqntoidtvs0" path="res://Mats/PavingStones146_1K-JPG/PavingStones146_1K-JPG_Color.jpg" id="2_thkkd"]
+[ext_resource type="Texture2D" uid="uid://casyrsv6fna3n" path="res://Mats/golden_gate_hills_4k.exr" id="3_o04to"]
+[ext_resource type="Script" path="res://Node3D.gd" id="4_qgdw0"]
+[ext_resource type="Texture2D" uid="uid://cigkfcw28ipci" path="res://Mats/New Project.png" id="5_mgtrb"]
+
+[sub_resource type="GDScript" id="GDScript_v1jfx"]
+script/source = "extends CharacterBody3D
+
+var laser_speed = 85.0  # Speed of the laser
+var laser_lifetime = 3.0  # Lifetime of the laser (in seconds)
+var laser_direction = Vector3(0, 0, -1)  # Direction the laser will move
+
+var SPEED = 5.0
+const JUMP_VELOCITY = 5.0
+const BOUNCE_FORCE_UP = 5.0  # The bounce force when the player hits a wall
+const LEAP_FORCE = 50  # The bounce force when the player hits a wall
+
+var mouse_sensitivity : float = 0.0001
+var lerp_speed : float = 13
+var current_dir = Vector2(0,0)
+
+var laserFired = false
+@onready var animTree = $Model/Catty/AnimationPlayer/AnimationTree
+
+# Get the gravity from the project settings to be synced with RigidBody nodes.
+var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
+
+@onready var camera = $SpringArm3D/Camera3D
+@onready var cameraNode = $SpringArm3D
+
+@onready var main_scene_root = get_tree().current_scene
+@onready var fire_node = animTree.get(\"parameters/FireShot/request\")
+# Flag to track if the player is in the air or not
+var is_jumping = false
+
+# Smooth interpolation factor
+var interpolation_speed = 4.0  # The speed at which the velocity interpolates towards the target velocity
+var interpolation_speed_air = 3.0  # The speed at which the velocity interpolates towards the target velocity
+var target_velocity = Vector3.ZERO  
+var grapple_velocity = Vector3.ZERO
+var final_velocity = Vector3.ZERO  
+
+var grapple_target = Vector3.ZERO
+var grappling_to = Vector3.ZERO
+var is_grappling = false
+var Grapplemesh
+var mesh_instance
+
+@export var grapple_force: float = 50.0
+@export var max_grapple_distance: float = 70.0
+@onready var indicator = get_node(\"/root/Main scene/CanvasLayer/Indicator\")
+
+var is_aiming = false
+var can_grapple = false
+var alternatefire = false
+
+@onready var grapple_marker = get_node(\"/root/Main scene/GrappleMarker\")
+
+# Called when the node enters the scene tree for the first time.
+func _ready():
+	# Set the cursor to hidden for mouse look
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	animTree.set(\"parameters/StateMachine/conditions/Jumping\",false)
+	
+func _input(event):
+	# Check if the left mouse button was clicked
+	if !Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and laserFired == false:
+			fire_laser()
+			laserFired = true
+	
+	if event is InputEventKey and Input.is_key_pressed(KEY_E) and event.pressed and laserFired == false:
+		fire_laser()
+		laserFired = true
+	
+	if Input.is_key_pressed(KEY_E) == false:
+		laserFired = false
+	
+func _process(delta):
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		camera.fov = lerp(camera.fov,40.0,lerp_speed*delta);		
+	elif Input.is_key_pressed(KEY_CTRL):
+		camera.fov = lerp(camera.fov,80.0,lerp_speed*delta);
+	else:
+		camera.fov = lerp(camera.fov,65.0,lerp_speed*delta);
+		
+		
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		scan_grapple()
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			fire_grapple()
+	else:
+		is_aiming = false
+		grapple_marker.visible = false
+		
+	#indicator.visible = is_aiming
+func _physics_process(delta):
+	
+	var mouse_movement : Vector2 = Input.get_last_mouse_velocity()
+
+	# Horizontal rotation (Y-axis) for the sphere
+	cameraNode.rotate_x(-mouse_movement.y * mouse_sensitivity)
+	
+	# Check for Escape key to release the mouse capture
+	if Input.is_action_just_pressed(\"ui_cancel\"):  # Escape button
+		get_tree().quit()
+
+	if Input.is_action_just_pressed(\"ui_accept\"):
+		if is_grappling:
+			is_grappling = false
+			Grapplemesh.clear_surfaces()
+
+	# Handle jump (spacebar) - trigger on press and reset on release
+	if Input.is_action_just_pressed(\"ui_accept\") and is_on_floor() and not is_jumping:
+		velocity.y = JUMP_VELOCITY
+		is_jumping = true  # Set jumping to true after jump
+
+	animTree.set(\"parameters/StateMachine/conditions/Jumping\",is_jumping)
+	animTree.set(\"parameters/StateMachine/conditions/notJumping\",!is_jumping)
+	
+	animTree.set(\"parameters/StateMachine/conditions/Grappled\",is_grappling)
+	animTree.set(\"parameters/StateMachine/conditions/NotGrappled\",!is_grappling)
+	
+	# Handle movement with WASD input (or arrows)
+	var input_dir = Input.get_vector(\"ui_left\", \"ui_right\", \"ui_up\", \"ui_down\")
+	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y))
+	
+	if Input.is_key_pressed(KEY_CTRL):
+		SPEED = 10
+		input_dir = input_dir * 1.5
+	else:
+		SPEED = 5
+		
+	current_dir = lerp(current_dir,input_dir,5*delta)
+	
+	animTree.set(\"parameters/StateMachine/BlendSpace2D/blend_position\",Vector2(current_dir.x,-current_dir.y))
+	
+	if is_grappling:
+		var distance_to_grapple = grappling_to - position
+		var centeredPos = Vector3(position.x,position.y+1,position.z)
+		update_grapple(centeredPos,grappling_to)
+		if abs(distance_to_grapple.length()) < 5.0:
+			is_grappling = false
+			Grapplemesh.clear_surfaces()
+		
+		grapple_velocity =  distance_to_grapple * 3
+	else:
+		grapple_velocity = Vector3.ZERO
+	
+	
+
+	if direction:
+		if is_grappling:
+			target_velocity.x = direction.x * SPEED * 3
+			target_velocity.z = direction.z * SPEED * 3
+		else:
+			target_velocity.x = direction.x * SPEED
+			target_velocity.z = direction.z * SPEED
+			
+	else:
+		target_velocity.x = move_toward(target_velocity.x, 0, interpolation_speed*delta * 5)
+		target_velocity.z = move_toward(target_velocity.z, 0, interpolation_speed*delta * 5)
+	
+	
+	
+	final_velocity = target_velocity + grapple_velocity / 2
+	
+	if is_grappling:
+		velocity.y = lerp(velocity.y, grapple_velocity.y, interpolation_speed_air * delta)
+
+	if not is_on_floor():
+		if is_grappling == false:
+			velocity.y -= gravity * delta
+			
+		is_jumping = true  # The player is now in the air (jumping or falling)
+		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed_air * delta)
+		velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed_air * delta)
+	else:
+		is_jumping = false
+		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed * delta)
+		velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed * delta)
+
+
+	# Detect if the player is colliding with any object
+	if is_colliding():
+		# Check if Space is pressed to trigger a bounce off the collision object
+		if Input.is_action_just_pressed(\"ui_accept\"):
+			apply_bounce()
+
+	# Move the character and slide based on velocity
+	move_and_slide()
+
+	# Handle mouse look for camera movement (horizontal rotation)
+	mouse_movement = Input.get_last_mouse_velocity()
+
+	# Horizontal rotation (Y-axis) for the camera
+	rotate_y(-mouse_movement.x * mouse_sensitivity)
+
+# Check if the player is colliding with an object
+func is_colliding() -> bool:
+	# Use `get_slide_collision` to check if the character is colliding
+	for i in range(get_slide_collision_count()):
+		var collision = get_slide_collision(i)
+		if collision:  # If a collider exists
+			# You can check the object name or group here if needed
+			return true
+	return false
+
+# Apply a bouncing effect to the player's velocity when colliding with an object
+func apply_bounce():
+	# Apply a vertical force to simulate a bounce (you can adjust the strength)
+	velocity.y = BOUNCE_FORCE_UP  # Apply upward force on bounce
+
+	# Optional: Reduce horizontal velocity to make it less \"slippery\" after bouncing
+	velocity.x = velocity.x + (-get_collision_vector().x * 50)  # Reduce horizontal speed on X axis after bounce
+	velocity.z = velocity.z + (-get_collision_vector().z * 50) # Reduce horizontal speed on Z axis after bounce
+
+# Get the vector from the player to the colliding object
+func get_collision_vector() -> Vector3:
+	for i in range(get_slide_collision_count()):
+		var collision = get_slide_collision(i)
+		if collision:
+			# Get the point of contact with the colliding object
+			var collision_point = collision.get_position()
+			# Calculate the vector from the player to the collision point
+			var collision_vector = collision_point - global_position
+
+			return collision_vector
+	return Vector3.ZERO  # Return zero vector if no collision
+
+
+func fire_laser():
+	# Alternate fire animation
+	if alternatefire:
+		animTree.set(\"parameters/FireShot/request\", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	else:
+		animTree.set(\"parameters/FireSecond/request\", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	alternatefire = !alternatefire
+
+	# Raycast forward from camera
+	var ray_origin = cameraNode.global_transform.origin
+	var ray_direction = -cameraNode.global_transform.basis.z  # In Godot, -Z is forward
+	var ray_length = 1000.0  # Laser range in units
+
+	var space_state = get_world_3d().direct_space_state
+	var query = PhysicsRayQueryParameters3D.new()
+	query.from = ray_origin
+	query.to = ray_origin + ray_direction * ray_length
+	query.collision_mask = 1  # Adjust collision mask as needed
+
+	var result = space_state.intersect_ray(query)
+
+	if result:
+		var hit_position = result.position
+		var hit_normal = result.normal
+		var collider = result.collider
+
+		# 🔥 Create explosion at hit point
+		spawn_explosion(hit_position)
+
+		# ⚡ Create lightning beam from gun to hit point
+		spawn_lightning_beam(ray_origin, hit_position)
+	else:
+		# If nothing hit, just spawn lightning beam at max range
+		var end_point = ray_origin + ray_direction * ray_length
+		spawn_lightning_beam(ray_origin, end_point)
+
+func spawn_explosion(position: Vector3):
+	var explosion = preload(\"res://explosionscene.tscn\").instantiate()
+	explosion.global_transform.origin = position
+	main_scene_root.add_child(explosion)
+
+func spawn_lightning_beam(start_pos: Vector3, end_pos: Vector3):
+	var lightning = preload(\"res://LightningBeam.tscn\").instantiate()
+	
+	var skeleton = get_node(\"Model/Catty/Back/Skeleton3D\")
+	lightning.skeleton = skeleton
+	if alternatefire:
+		lightning.bone_name = \"mixamorig_LeftHand\"
+	else:
+		lightning.bone_name = \"mixamorig_RightHand\"
+		
+	
+	lightning.target_position = end_pos
+	main_scene_root.add_child(lightning) 
+	# After adding to the scene:
+	
+	# Animate fade
+	var fade_in_time = 0.2
+	var fade_out_time = 0.2
+	
+	# Get the child MeshInstance3D
+	var mesh_instance = lightning.get_node(\"MeshInstance3D\")  # Replace \"MeshInstance3D\" with your actual node name if needed
+	if mesh_instance:
+		var mat = mesh_instance.material_override
+		if mat is ShaderMaterial:
+			var shader_mat = mat as ShaderMaterial
+			var tween = get_tree().create_tween()
+			tween.tween_method(
+				func(value):
+					shader_mat.set_shader_parameter(\"fade_alpha\", value),
+				0.0, 1.0, fade_in_time
+				)
+			tween.tween_method(
+				func(value):
+					shader_mat.set_shader_parameter(\"fade_alpha\", value),
+				1.0, 0.0, fade_out_time
+			)
+			tween.tween_callback(Callable(lightning, \"queue_free\"))
+		else:
+			push_error(\"ShaderMaterial not found on the beam's MeshInstance3D!\")
+	else:
+		push_error(\"No MeshInstance3D found on lightning beam!\")
+
+
+func scan_grapple():
+	if is_grappling == false:
+		is_aiming = true
+		var space_state = get_world_3d().direct_space_state
+
+		var from = cameraNode.global_transform.origin
+		var to = camera.global_transform.origin + -camera.global_transform.basis.z * max_grapple_distance  # Ray 20 units forward
+
+		var ray_params = PhysicsRayQueryParameters3D.new()
+		ray_params.from = from
+		ray_params.to = to
+		ray_params.exclude = [self]
+
+		var result = space_state.intersect_ray(ray_params)
+
+		if result:
+			grapple_marker.global_position = result[\"position\"]
+			grapple_marker.visible = true
+			
+			grapple_target.x = result[\"position\"].x
+			grapple_target.y = result[\"position\"].y
+			grapple_target.z = result[\"position\"].z
+			can_grapple = true
+			
+			
+func fire_grapple():
+	if can_grapple && is_grappling == false:
+		can_grapple = false
+		is_grappling = true
+		grappling_to = grapple_target
+		
+		Grapplemesh = ImmediateMesh.new()
+		Grapplemesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		
+		var centeredPos = Vector3(position.x,position.y+1,position.z)
+		Grapplemesh.surface_add_vertex(centeredPos)
+		Grapplemesh.surface_add_vertex(grappling_to)
+		Grapplemesh.surface_end()
+
+		mesh_instance = MeshInstance3D.new()
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color.WHITE
+		mesh_instance.material_override = mat
+		mesh_instance.mesh = Grapplemesh
+		main_scene_root.add_child(mesh_instance)
+		
+		var ShootSpeed = grappling_to - position
+		velocity = ShootSpeed.limit_length(7)
+		
+		
+func update_grapple(a: Vector3, b: Vector3):
+	Grapplemesh.clear_surfaces()
+	Grapplemesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	Grapplemesh.surface_add_vertex(a)
+	Grapplemesh.surface_add_vertex(b)
+	Grapplemesh.surface_end()
+
+	mesh_instance = MeshInstance3D.new()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color.WHITE
+	mesh_instance.material_override = mat
+	mesh_instance.mesh = Grapplemesh
+"
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2gfj3"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_d6svt"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_00e7b"]
+transparency = 1
+albedo_color = Color(1, 1, 1, 0.670588)
+albedo_texture = ExtResource("5_mgtrb")
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 7.5
+billboard_mode = 1
+billboard_keep_scale = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4eiq8"]
+specular_mode = 1
+albedo_texture = ExtResource("2_thkkd")
+emission = Color(0, 0.309804, 0, 1)
+uv1_scale = Vector3(40, 40, 40)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3p5rk"]
+size = Vector3(1.07422, 1, 1.06934)
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_cpebo"]
+panorama = ExtResource("3_o04to")
+
+[sub_resource type="Sky" id="Sky_kahkq"]
+sky_material = SubResource("PanoramaSkyMaterial_cpebo")
+
+[sub_resource type="Environment" id="Environment_qdd02"]
+background_mode = 2
+background_energy_multiplier = 0.4
+sky = SubResource("Sky_kahkq")
+glow_enabled = true
+glow_intensity = 2.0
+glow_bloom = 0.5
+glow_hdr_threshold = 0.6
+fog_light_color = Color(0.847059, 0.847059, 0.92549, 1)
+fog_light_energy = 0.73
+fog_density = 0.039
+fog_height = 3.0
+volumetric_fog_density = 0.0605
+volumetric_fog_albedo = Color(0.87451, 0.623529, 0.168627, 1)
+volumetric_fog_emission = Color(0.858824, 0.807843, 0.933333, 1)
+volumetric_fog_length = 7.16
+
+[sub_resource type="GDScript" id="GDScript_6obk7"]
+resource_name = "ControlScript"
+script/source = "extends Control
+
+func _ready():
+	anchor_left = 0.0
+	anchor_top = 0.0
+	anchor_right = 1.0
+	anchor_bottom = 1.0
+
+	offset_left = 0.0
+	offset_top = 0.0
+	offset_right = 0.0
+	offset_bottom = 0.0
+
+	queue_redraw()
+
+func _process(_delta):
+	queue_redraw()
+
+func _draw():
+	var center = get_size() / 2
+	var line_length = 10
+	var line_color = Color.WHITE
+	var thickness = 2
+
+	draw_line(center - Vector2(line_length, 0),
+		center + Vector2(line_length, 0),
+		line_color,
+		thickness)
+
+	# Vertical line
+	draw_line(center - Vector2(0, line_length),
+		center + Vector2(0, line_length),
+		line_color,
+		thickness)
+"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dtcci"]
+
+[node name="Main scene" type="Node3D"]
+
+[node name="CharacterBody3D" type="CharacterBody3D" parent="."]
+transform = Transform3D(-0.912641, 0, -0.408761, 0, 1, 0, 0.408761, 0, -0.912641, -2.69452, 0.469247, -0.934242)
+collision_layer = 2
+script = SubResource("GDScript_v1jfx")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CharacterBody3D"]
+transform = Transform3D(0.92, 0, 5.96046e-08, 0, 0.92, 0, -5.96046e-08, 0, 0.92, 0, 0.967742, 0)
+shape = SubResource("CapsuleShape3D_2gfj3")
+
+[node name="Model" type="Node3D" parent="CharacterBody3D"]
+transform = Transform3D(1, 0, 1.78814e-07, 0, 1, 0, -1.78814e-07, 0, 1, 0, 0.0808781, 0)
+
+[node name="Catty" parent="CharacterBody3D/Model" instance=ExtResource("2_0jr8n")]
+transform = Transform3D(-1, 0, -2.68221e-07, 0, 1, 0, 2.68221e-07, 0, -1, 0, -0.0184845, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CharacterBody3D"]
+transform = Transform3D(1, 0, 2.98023e-07, 0, 1, 0, -2.98023e-07, 0, 1, 0.434232, 2.51926, 0.150762)
+spring_length = 8.0
+margin = 2.0
+
+[node name="Camera3D" type="Camera3D" parent="CharacterBody3D/SpringArm3D"]
+transform = Transform3D(1, 0, 8.04663e-07, 0, 1, 0, -8.04663e-07, 0, 1, 0, 0, 0)
+fov = 65.0
+
+[node name="GrappleMarker" type="Node3D" parent="."]
+transform = Transform3D(-0.912641, 0, -0.408761, 0, 1, 0, 0.408761, 0, -0.912641, -2.69452, -0.363612, -0.934242)
+
+[node name="CSGMesh3D" type="CSGMesh3D" parent="GrappleMarker"]
+mesh = SubResource("QuadMesh_d6svt")
+material = SubResource("StandardMaterial3D_00e7b")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="GrappleMarker"]
+light_indirect_energy = 3.0
+light_volumetric_fog_energy = 3.0
+light_size = 10.0
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+transform = Transform3D(400, 0, 0, 0, 1, 0, 0, 0, 400, 160.937, 7.62939e-06, 165.417)
+
+[node name="CSGBox3D" type="CSGBox3D" parent="StaticBody3D"]
+transform = Transform3D(1.07502, -5.65981e-07, -3.9992e-11, 6.08439e-07, 1, -7.81447e-14, 3.9992e-11, 7.26705e-14, 1.07502, 0, 0, 0)
+use_collision = true
+material = SubResource("StandardMaterial3D_4eiq8")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+transform = Transform3D(1, -5.68434e-14, 2.08714e-11, 4.4421e-07, 1, 2.38419e-07, 8.09749e-12, 5.19001e-15, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_3p5rk")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_qdd02")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.857802, -0.486859, -0.164755, 0.34151, 0.300326, 0.890604, -0.384119, -0.820227, 0.423887, -12.1117, 9.423, 0)
+light_color = Color(0.882353, 0.831373, 0.952941, 1)
+light_energy = 0.395
+shadow_enabled = true
+
+[node name="Node3D" type="Node3D" parent="."]
+script = ExtResource("4_qgdw0")
+park_chance = 0.4
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = SubResource("GDScript_6obk7")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Indicator" type="Control" parent="CanvasLayer"]
+visible = false
+material = SubResource("ShaderMaterial_dtcci")
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -57.0
+offset_top = -48.0
+offset_right = 57.0
+offset_bottom = 48.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TextureRect" type="TextureRect" parent="CanvasLayer/Indicator"]
+layout_mode = 0
+offset_right = 115.0
+offset_bottom = 99.0
+texture = ExtResource("5_mgtrb")
