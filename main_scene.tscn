@@ -37,8 +37,9 @@ var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
 var is_jumping = false
 
 # Smooth interpolation factor
-var interpolation_speed = 8.0  # The speed at which the velocity interpolates towards the target velocity
-var interpolation_speed_air = 4.0  # The speed at which the velocity interpolates towards the target velocity
+var interpolation_speed = 8.0  
+var interpolation_speed_air = 0.3
+var interpolation_grapple = 5.0  
 var target_velocity = Vector3.ZERO  
 var grapple_velocity = Vector3.ZERO
 var final_velocity = Vector3.ZERO  
@@ -172,15 +173,19 @@ func _physics_process(delta):
 	final_velocity = target_velocity + grapple_velocity / 2
 	
 	if is_grappling:
-		velocity.y = lerp(velocity.y, grapple_velocity.y, interpolation_speed_air * delta)
+		velocity.y = lerp(velocity.y, grapple_velocity.y, interpolation_grapple * delta)
 
 	if not is_on_floor():
 		if is_grappling == false:
 			velocity.y -= gravity * delta
 			
 		is_jumping = true  # The player is now in the air (jumping or falling)
-		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed_air * delta)
-		velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed_air * delta)
+		if is_grappling:
+			velocity.x = lerp(velocity.x, final_velocity.x, interpolation_grapple * delta)
+			velocity.z = lerp(velocity.z, final_velocity.z, interpolation_grapple * delta)
+		else:
+			velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed_air * delta)
+			velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed_air * delta)
 	else:
 		is_jumping = false
 		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed * delta)
@@ -400,7 +405,7 @@ billboard_keep_scale = true
 specular_mode = 1
 albedo_texture = ExtResource("2_thkkd")
 emission = Color(0, 0.309804, 0, 1)
-uv1_scale = Vector3(40, 40, 40)
+uv1_scale = Vector3(20, 20, 20)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_3p5rk"]
 size = Vector3(1.07422, 1, 1.06934)
@@ -507,7 +512,7 @@ light_volumetric_fog_energy = 3.0
 light_size = 10.0
 
 [node name="StaticBody3D" type="StaticBody3D" parent="."]
-transform = Transform3D(400, 0, 0, 0, 1, 0, 0, 0, 400, 160.937, 7.62939e-06, 165.417)
+transform = Transform3D(190.961, 0, 0, 0, 1, 0, 0, 0, 187.325, 78.7369, 7.62939e-06, 68.4203)
 
 [node name="CSGBox3D" type="CSGBox3D" parent="StaticBody3D"]
 transform = Transform3D(1.07502, -5.65981e-07, -3.9992e-11, 6.08439e-07, 1, -7.81447e-14, 3.9992e-11, 7.26705e-14, 1.07502, 0, 0, 0)

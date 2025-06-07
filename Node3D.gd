@@ -8,14 +8,17 @@ extends Node3D
 
 
 @export var waves: int = 30
-@export var enemiesinwave: int = 30
-@export var wavetimer: int = 60
+@export var enemiesinwave: int = 10
+@export var wavetimer: int = 30
 @export var baseHealth: float = 100
 @export var healthMultiply: float = 1.5
 @export var ENEMYMASS = 8
 
 var spawned: int = 0
+var currentWave :int = 0
 var currentHealth
+
+var time_passed = 0.0
 
 
 func _ready():
@@ -88,7 +91,13 @@ func generate_town():
 			)
 
 
-func _physics_process(_delta):
+func _process(_delta):
+	time_passed += _delta
+	if time_passed > wavetimer:
+		time_passed = 0
+		currentWave += 1
+		currentHealth = currentHealth * healthMultiply
+		spawned = 0
 	if( spawned < enemiesinwave ):
 		var enemy = RigidBody3D.new()
 		enemy.set_meta("type","enemy")
