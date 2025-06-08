@@ -6,8 +6,11 @@ var grow = true
 var physics_frame_counter = 0
 var damage_applied = false
 
+var minDamage = 0
+var maxDamage = 10
+
 func _ready():
-	explosion_light.visible = true
+	#explosion_light.visible = true
 	explosion_light.light_energy = 1
 	await get_tree().create_timer(0.5).timeout
 	grow = false
@@ -32,4 +35,5 @@ func apply_damage():
 	var bodies = area.get_overlapping_bodies()
 	for body in bodies:
 		if body.has_method("take_damage"):
-			body.take_damage(25)
+			var damage = randf_range(minDamage,maxDamage)
+			body.take_damage(int(damage))

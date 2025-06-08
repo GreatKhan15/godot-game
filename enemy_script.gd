@@ -10,6 +10,10 @@ var move_interval = 1 # seconds between direction changes
 var move_timer = 0.0
 var move_speed = 3.0
 var direction
+var experience = 40
+
+@onready var levelController = get_node("/root/Main scene/LevelController")
+@onready var player = get_node("/root/Main scene/CharacterBody3D")
 
 func _ready():
 	health = hpBar.get_meta("health")
@@ -31,5 +35,22 @@ func _physics_process(delta):
 
 func take_damage(amount):
 	health -= amount
+	
+	var damage_scene = preload("res://DamageNumber.tscn")
+	var damage_node = damage_scene.instantiate()
+	
+	damage_node.get_node("Label3D").text = str(amount)
+	var random_offset = Vector3(
+	randf_range(-3, 3),
+	randf_range(1.5, 2.5),
+	randf_range(-3, 3)
+	)
+	damage_node.global_transform.origin = global_transform.origin + random_offset
+	
+	# Add it to the scene tree (ideally under the same parent or a dedicated UI/3D node)
+	get_tree().current_scene.add_child(damage_node)
+	
 	if health <= 0:
+		player.currentEXP += experience
+		levelController.alive -= 1
 		queue_free()

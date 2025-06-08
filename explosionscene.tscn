@@ -156,11 +156,12 @@ process_material = SubResource("ParticleProcessMaterial_dplu1")
 draw_pass_1 = SubResource("SphereMesh_mgg50")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="."]
+visible = false
 light_size = 0.035
 omni_range = 11.579
 
 [node name="Area3D" type="Area3D" parent="."]
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
-transform = Transform3D(4.32, 0, 0, 0, 4.32, 0, 0, 0, 4.32, 0, 0, 0)
+transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0)
 shape = SubResource("SphereShape3D_bgw02")

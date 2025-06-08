@@ -10,21 +10,39 @@ extends Node3D
 @export var waves: int = 30
 @export var enemiesinwave: int = 10
 @export var wavetimer: int = 30
+
 @export var baseHealth: float = 100
 @export var healthMultiply: float = 1.5
+
+@export var baseEXP: float = 17
+@export var expMultiply: float = 1.3
+
 @export var ENEMYMASS = 8
 
 var spawned: int = 0
-var currentWave :int = 0
+var alive: int = 0
+var currentWave :int = 1
 var currentHealth
+var currentEXP
 
 var time_passed = 0.0
 
+var rewardedExtraEXP = false
+
+@onready var player = get_node("/root/Main scene/CharacterBody3D")
+@onready var Canvas : CanvasLayer = get_node("/root/Main scene/CanvasLayer")
+@onready var levelBar : ProgressBar = Canvas.get_node("Indicator/ProgressBar")
+@onready var levelTimeCont : CenterContainer = Canvas.get_node("Indicator/CenterContainer")
+@onready var levelTime : TextureProgressBar = Canvas.get_node("Indicator/CenterContainer/TextureProgressBar")
+@onready var levelTimerText : Label = Canvas.get_node("Indicator/CenterContainer/Label")
+@onready var levelCounter : Label = Canvas.get_node("Indicator/LevelContainer/LevelContainerLabel")
 
 func _ready():
 	randomize()
 	generate_town()
+	levelCounter.text = str(currentWave)
 	currentHealth = baseHealth
+	currentEXP = baseEXP
 
 # Generate more complex town with different building types
 func generate_town():
@@ -77,7 +95,6 @@ func generate_town():
 				collision.shape = cylinder_shape
 			building.add_child(collision)
 
-
 			# Random slight offset
 			var offset_x = randf_range(-position_jitter, position_jitter)
 			var offset_z = randf_range(-position_jitter, position_jitter)
@@ -93,11 +110,7 @@ func generate_town():
 
 func _process(_delta):
 	time_passed += _delta
-	if time_passed > wavetimer:
-		time_passed = 0
-		currentWave += 1
-		currentHealth = currentHealth * healthMultiply
-		spawned = 0
+	
 	if( spawned < enemiesinwave ):
 		var enemy = RigidBody3D.new()
 		enemy.set_meta("type","enemy")
@@ -137,6 +150,47 @@ func _process(_delta):
 		hpBar.billboard = true
 		enemy.add_child(hpBar)
 		enemy.set_script(load("res://enemy_script.gd"))
+		enemy.experience = currentEXP
 		add_child(enemy)
-		spawned = spawned + 1
+		spawned += 1
+		alive += 1
+	
+	if !rewardedExtraEXP && alive == 0 && time_passed < wavetimer - 1:
+		rewardedExtraEXP = true
+		player.addSP(3)
+	if time_passed >= wavetimer && alive == 0:
+		time_passed = 0
+		currentWave += 1
+		currentHealth = currentHealth * healthMultiply
+		currentEXP = currentEXP * expMultiply
+		spawned = 0
+		levelCounter.text = str(currentWave)
+		rewardedExtraEXP = false
+	
+	
+	var timeLeft : int = wavetimer-time_passed
+	if timeLeft >= 0:
+		levelTimerText.text = str(timeLeft)
+	else:
+		levelTimerText.text = "Next level ready"
+	var targetBar = (enemiesinwave - alive) * (100 / enemiesinwave)
+	levelBar.value = lerp(levelBar.value,float(targetBar),_delta*2)
+	if levelBar.value + 0.5 < targetBar:
+		levelBar.value += 0.5
+	if levelBar.value - 1 > targetBar:
+		levelBar.value -= 1
+	if levelBar.value < 1 || levelBar.value == 1 && targetBar == 0:
+		levelBar.value = 0
+	levelTime.value = time_passed / wavetimer * 100
+	
+	if rewardedExtraEXP:
+		if levelTimeCont.scale.x < 0.4:
+			levelTimeCont.position.y -= 1
+			levelTimeCont.scale.x += _delta/3
+			levelTimeCont.scale.y += _delta/3
+	else:
+		if levelTimeCont.scale.x > 0.2:
+			levelTimeCont.position.y += 1
+			levelTimeCont.scale.x -= _delta/3
+			levelTimeCont.scale.y -= _delta/3
 	

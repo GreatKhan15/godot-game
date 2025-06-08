@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3 uid="uid://bsbhejdsyqgdj"]
+
+[ext_resource type="Script" path="res://DamageNumber.gd" id="1_3ctmn"]
+[ext_resource type="FontFile" uid="uid://da5q163t40f5k" path="res://VeniteAdoremus-rgRBA.ttf" id="1_knci6"]
+
+[node name="DamageNumber" type="Node3D"]
+
+[node name="Label3D" type="Label3D" parent="."]
+billboard = 1
+font = ExtResource("1_knci6")
+font_size = 217
+outline_size = 30
+script = ExtResource("1_3ctmn")
