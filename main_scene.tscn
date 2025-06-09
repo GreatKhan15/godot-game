@@ -1,9 +1,10 @@
-[gd_scene load_steps=30 format=3 uid="uid://tt2of2ejfpqe"]
+[gd_scene load_steps=31 format=3 uid="uid://tt2of2ejfpqe"]
 
 [ext_resource type="PackedScene" uid="uid://b5g7jtbbibg5a" path="res://Catty.tscn" id="2_0jr8n"]
-[ext_resource type="Texture2D" uid="uid://bdwqntoidtvs0" path="res://Mats/PavingStones146_1K-JPG/PavingStones146_1K-JPG_Color.jpg" id="2_thkkd"]
-[ext_resource type="Texture2D" uid="uid://casyrsv6fna3n" path="res://Mats/golden_gate_hills_4k.exr" id="3_o04to"]
+[ext_resource type="Texture2D" uid="uid://blbbme7etxggr" path="res://Mats/asphalt_road_2.jpg" id="3_ky4sv"]
+[ext_resource type="Texture2D" uid="uid://pirwhlw0l0tb" path="res://Mats/up-deep space-UpscaledTopaz-sharpen-enhance-4x.jpeg" id="4_6jfw5"]
 [ext_resource type="Script" path="res://Node3D.gd" id="4_qgdw0"]
+[ext_resource type="Texture2D" uid="uid://ciwhc7nx7qmxl" path="res://Mats/asphalt_road_3.jpg" id="4_sayrb"]
 [ext_resource type="Texture2D" uid="uid://cigkfcw28ipci" path="res://Mats/New Project.png" id="5_mgtrb"]
 [ext_resource type="FontFile" uid="uid://da5q163t40f5k" path="res://VeniteAdoremus-rgRBA.ttf" id="6_l0jxb"]
 [ext_resource type="Texture2D" uid="uid://c7dj7p4t257by" path="res://CircleBack.png" id="6_y88hj"]
@@ -18,12 +19,12 @@ var laser_speed = 85.0  # Speed of the laser
 var laser_lifetime = 3.0  # Lifetime of the laser (in seconds)
 var laser_direction = Vector3(0, 0, -1)  # Direction the laser will move
 
-const BOUNCE_FORCE_UP = 5.0  # The bounce force when the player hits a wall
-const LEAP_FORCE = 50  # The bounce force when the player hits a wall
-
 var mouse_sensitivity : float = 0.002
 var lerp_speed : float = 13
 var current_dir = Vector2(0,0)
+
+const MAXZOOM = 20
+const MINZOOM = 1
 
 var laserFired = false
 @onready var animTree = $Model/Catty/AnimationPlayer/AnimationTree
@@ -33,6 +34,7 @@ var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
 
 @onready var camera = $SpringArm3D/Camera3D
 @onready var cameraNode = $SpringArm3D
+@onready var cameralength = cameraNode.spring_length
 
 @onready var main_scene_root = get_tree().current_scene
 @onready var fire_node = animTree.get(\"parameters/FireShot/request\")
@@ -40,7 +42,7 @@ var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
 var is_jumping = false
 
 var SPEED = 5.0
-var interpolation_speed = 8.0  
+var interpolation_speed = 12.0  
 var interpolation_speed_air = 0.3
 var interpolation_grapple = 5.0  
 var target_velocity = Vector3.ZERO  
@@ -81,8 +83,8 @@ var alternatefire = false
 @export var initminDamage = 20
 @export var initmaxDamage = 30
 @export var initSPEED = 5.0
-@export var initJUMP_VELOCITY = 5.0
-@export var initAOE = 5.0
+@export var initJUMP_VELOCITY = 10.0 
+@export var initAOE = 2.0
 @export var inithealthRegen = 2
 
 @export var currentHealth = initcurrentHealth
@@ -99,7 +101,10 @@ var alternatefire = false
 @export var damageStep = 1.12
 @export var speedStep = 1.0
 @export var jumpStep = 1.0
-@export var AOEStep = 1.0
+@export var AOEStep = 0.4
+
+var BOUNCE_FORCE_UP = 5.0  # The bounce force when the player hits a wall
+var LEAP_FORCE = 50  # The bounce force when the player hits a wall
 
 var cameraEnabled = true
 
@@ -108,6 +113,7 @@ func _ready():
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	animTree.active = true
 	animTree.set(\"parameters/StateMachine/conditions/Jumping\",false)
+	
 	statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
 	
 	statPanel.get_node(\"StatRows/Hlth/Stat\").text = str(maxHealth)
@@ -142,19 +148,32 @@ func _input(event):
 				cameraEnabled = true
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		
-		if event.pressed and event.keycode == KEY_1:
-			_on_button_pressed()
-		elif event.pressed and event.keycode == KEY_2:
-			_on_button_2_pressed()
-		elif event.pressed and event.keycode == KEY_3:
-			_on_button_3_pressed()
-		elif event.pressed and event.keycode == KEY_4:
-			_on_button_4_pressed()
-		elif event.pressed and event.keycode == KEY_5:
-			_on_button_5_pressed()
+		if statPanel.is_open:
+			if event.pressed and event.keycode == KEY_1:
+				_on_button_pressed()
+			elif event.pressed and event.keycode == KEY_2:
+				_on_button_2_pressed()
+			elif event.pressed and event.keycode == KEY_3:
+				_on_button_3_pressed()
+			elif event.pressed and event.keycode == KEY_4:
+				_on_button_4_pressed()
+			elif event.pressed and event.keycode == KEY_5:
+				_on_button_5_pressed()
+		
+		if event.pressed and event.keycode == KEY_B:
+			statpoints += 1
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
 	
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			cameralength = minf(MAXZOOM,cameralength + 0.5)
+			
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			cameralength = maxf(MINZOOM,cameralength - 0.5)
+			
 	
 func _process(delta):
+	cameraNode.spring_length = lerp(cameraNode.spring_length,cameralength,delta*4)
 	
 	if cameraEnabled:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
@@ -210,7 +229,7 @@ func _physics_process(delta):
 	if Input.is_action_just_pressed(\"ui_accept\"):
 		if is_grappling:
 			is_grappling = false
-			velocity.y = 10.0
+			velocity.y = JUMP_VELOCITY
 			Grapplemesh.clear_surfaces()
 
 	# Handle jump (spacebar) - trigger on press and reset on release
@@ -273,7 +292,7 @@ func _physics_process(delta):
 
 	if not is_on_floor():
 		if is_grappling == false:
-			velocity.y -= gravity * delta
+			velocity.y -= gravity * delta * 2.0
 			
 		is_jumping = true  # The player is now in the air (jumping or falling)
 		if is_grappling:
@@ -287,6 +306,8 @@ func _physics_process(delta):
 		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed * delta)
 		velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed * delta)
 
+	# Move the character and slide based on velocity
+	move_and_slide()
 
 	# Detect if the player is colliding with any object
 	if is_colliding():
@@ -294,8 +315,6 @@ func _physics_process(delta):
 		if Input.is_action_just_pressed(\"ui_accept\"):
 			apply_bounce()
 
-	# Move the character and slide based on velocity
-	move_and_slide()
 	
 	if cameraEnabled:
 		mouse_movement = Input.get_last_mouse_velocity()
@@ -375,6 +394,8 @@ func spawn_explosion(position: Vector3):
 	explosion.global_transform.origin = position
 	explosion.minDamage = minDamage
 	explosion.maxDamage = maxDamage
+	explosion.scale = Vector3(AOE,AOE,AOE)
+	explosion.aoeScale = AOE
 	main_scene_root.add_child(explosion)
 
 func spawn_lightning_beam(start_pos: Vector3, end_pos: Vector3):
@@ -560,7 +581,8 @@ func _on_button_4_pressed():
 			JUMP_VELOCITY += jumpStep
 			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
 			statPanel.get_node(\"StatRows/Jump/Stat\").text = str(JUMP_VELOCITY)
-
+			
+	BOUNCE_FORCE_UP = JUMP_VELOCITY
 
 func _on_button_5_pressed():
 	#AOEIncrease
@@ -571,14 +593,14 @@ func _on_button_5_pressed():
 			spentpoints += 1
 			AOE += AOEStep
 			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
-			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(AOE)
+			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(round(AOE*10)/10)
 	else:
 		if statpoints > 0:
 			statpoints -= 1
 			spentpoints += 1
 			AOE += AOEStep
 			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
-			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(AOE)
+			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(round(AOE*10)/10)
 
 func addSP(points):
 	statpoints += points
@@ -595,6 +617,7 @@ func _on_reset_stats_pressed():
 	healthRegen = inithealthRegen
 	statpoints += spentpoints
 	spentpoints = 0
+	BOUNCE_FORCE_UP = JUMP_VELOCITY
 	
 	statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
 	
@@ -620,15 +643,17 @@ billboard_keep_scale = true
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4eiq8"]
 specular_mode = 1
-albedo_texture = ExtResource("2_thkkd")
+albedo_texture = ExtResource("3_ky4sv")
 emission = Color(0, 0.309804, 0, 1)
-uv1_scale = Vector3(20, 20, 20)
+detail_enabled = true
+detail_albedo = ExtResource("4_sayrb")
+uv1_scale = Vector3(22.51, 22.51, 22.51)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_3p5rk"]
 size = Vector3(1.07422, 1, 1.06934)
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_cpebo"]
-panorama = ExtResource("3_o04to")
+panorama = ExtResource("4_6jfw5")
 
 [sub_resource type="Sky" id="Sky_kahkq"]
 sky_material = SubResource("PanoramaSkyMaterial_cpebo")
@@ -725,7 +750,7 @@ height = 30
 [node name="Main scene" type="Node3D"]
 
 [node name="CharacterBody3D" type="CharacterBody3D" parent="."]
-transform = Transform3D(-0.912641, 0, -0.408761, 0, 1, 0, 0.408761, 0, -0.912641, -2.69452, 0.469247, -0.934242)
+transform = Transform3D(-0.0103503, 0, 0.999946, 0, 1, 0, -0.999946, 0, -0.0103503, -18.3475, 0.37348, 8.4364)
 collision_layer = 2
 script = SubResource("GDScript_v1jfx")
 
@@ -750,25 +775,24 @@ fov = 65.0
 
 [node name="GrappleMarker" type="Node3D" parent="."]
 transform = Transform3D(-0.912641, 0, -0.408761, 0, 1, 0, 0.408761, 0, -0.912641, -2.69452, -0.363612, -0.934242)
+visible = false
 
 [node name="CSGMesh3D" type="CSGMesh3D" parent="GrappleMarker"]
 mesh = SubResource("QuadMesh_d6svt")
 material = SubResource("StandardMaterial3D_00e7b")
 
 [node name="OmniLight3D" type="OmniLight3D" parent="GrappleMarker"]
-light_indirect_energy = 3.0
-light_volumetric_fog_energy = 3.0
 light_size = 10.0
 
 [node name="StaticBody3D" type="StaticBody3D" parent="."]
-transform = Transform3D(190.961, 0, 0, 0, 1, 0, 0, 0, 187.325, 78.7369, 7.62939e-06, 68.4203)
+transform = Transform3D(1032.19, 0, 0, 0, 1, 0, 0, 0, 981.481, 78.7369, 7.62939e-06, 68.4203)
 
 [node name="CSGBox3D" type="CSGBox3D" parent="StaticBody3D"]
 transform = Transform3D(1.07502, -5.65981e-07, -3.9992e-11, 6.08439e-07, 1, -7.81447e-14, 3.9992e-11, 7.26705e-14, 1.07502, 0, 0, 0)
 use_collision = true
 material = SubResource("StandardMaterial3D_4eiq8")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D" groups=["ground"]]
 transform = Transform3D(1, -5.68434e-14, 2.08714e-11, 4.4421e-07, 1, 2.38419e-07, 8.09749e-12, 5.19001e-15, 1, 0, 0, 0)
 shape = SubResource("BoxShape3D_3p5rk")
 
@@ -776,7 +800,7 @@ shape = SubResource("BoxShape3D_3p5rk")
 environment = SubResource("Environment_qdd02")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.857802, -0.486859, -0.164755, 0.34151, 0.300326, 0.890604, -0.384119, -0.820227, 0.423887, -12.1117, 9.423, 0)
+transform = Transform3D(-0.239741, 0.759542, 0.604666, -0.742461, -0.544737, 0.389888, 0.62552, -0.355469, 0.694526, -12.1117, 9.423, 0)
 light_color = Color(0.882353, 0.831373, 0.952941, 1)
 light_energy = 0.395
 shadow_enabled = true
@@ -814,7 +838,6 @@ offset_right = 195.0
 offset_bottom = -23.0
 grow_vertical = 0
 theme_override_fonts/font = ExtResource("6_l0jxb")
-step = 1.0
 
 [node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/Indicator"]
 layout_mode = 1

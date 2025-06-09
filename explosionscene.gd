@@ -2,14 +2,29 @@ extends Node3D
 
 @onready var explosion_light: OmniLight3D = $OmniLight3D
 @onready var area: Area3D = $Area3D
+@onready var explosionballs1 = $GPUParticles3D2
+@onready var explosionballs2 = $GPUParticles3D3
+
 var grow = true
 var physics_frame_counter = 0
 var damage_applied = false
+var aoeScale = 1
+var procMat : ParticleProcessMaterial
+var procMat2 : ParticleProcessMaterial
 
 var minDamage = 0
 var maxDamage = 10
 
 func _ready():
+	procMat = explosionballs1.process_material
+	procMat2 = explosionballs2.process_material
+	if procMat.scale_min != aoeScale:
+		procMat.scale_min = aoeScale
+		procMat2.scale_min = aoeScale
+		procMat.scale_max = aoeScale
+		procMat2.scale_max = aoeScale
+		explosionballs1.restart()
+		explosionballs2.restart()
 	#explosion_light.visible = true
 	explosion_light.light_energy = 1
 	await get_tree().create_timer(0.5).timeout

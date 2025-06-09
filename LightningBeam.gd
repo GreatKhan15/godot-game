@@ -3,6 +3,8 @@ extends Node3D
 var handNode : Transform3D
 var target_position : Vector3 = Vector3.ZERO
 
+
+
 var skeleton: Skeleton3D
 var bone_name: String
 var bone_idx: int = -1

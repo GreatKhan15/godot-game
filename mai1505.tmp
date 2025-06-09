@@ -1,0 +1,1391 @@
+[gd_scene load_steps=31 format=3 uid="uid://tt2of2ejfpqe"]
+
+[ext_resource type="PackedScene" uid="uid://b5g7jtbbibg5a" path="res://Catty.tscn" id="2_0jr8n"]
+[ext_resource type="Texture2D" uid="uid://blbbme7etxggr" path="res://Mats/asphalt_road_2.jpg" id="3_ky4sv"]
+[ext_resource type="Texture2D" uid="uid://pirwhlw0l0tb" path="res://Mats/up-deep space-UpscaledTopaz-sharpen-enhance-4x.jpeg" id="4_6jfw5"]
+[ext_resource type="Script" path="res://Node3D.gd" id="4_qgdw0"]
+[ext_resource type="Texture2D" uid="uid://ciwhc7nx7qmxl" path="res://Mats/asphalt_road_3.jpg" id="4_sayrb"]
+[ext_resource type="Texture2D" uid="uid://cigkfcw28ipci" path="res://Mats/New Project.png" id="5_mgtrb"]
+[ext_resource type="FontFile" uid="uid://da5q163t40f5k" path="res://VeniteAdoremus-rgRBA.ttf" id="6_l0jxb"]
+[ext_resource type="Texture2D" uid="uid://c7dj7p4t257by" path="res://CircleBack.png" id="6_y88hj"]
+[ext_resource type="Texture2D" uid="uid://k6xkvsducv84" path="res://CircleFill.png" id="7_avhlp"]
+[ext_resource type="Script" path="res://StatPanel.gd" id="9_xlh3r"]
+[ext_resource type="Script" path="res://StatPoints.gd" id="9_yww3e"]
+
+[sub_resource type="GDScript" id="GDScript_v1jfx"]
+script/source = "extends CharacterBody3D
+
+var laser_speed = 85.0  # Speed of the laser
+var laser_lifetime = 3.0  # Lifetime of the laser (in seconds)
+var laser_direction = Vector3(0, 0, -1)  # Direction the laser will move
+
+var mouse_sensitivity : float = 0.002
+var lerp_speed : float = 13
+var current_dir = Vector2(0,0)
+
+const MAXZOOM = 20
+const MINZOOM = 1
+
+var laserFired = false
+@onready var animTree = $Model/Catty/AnimationPlayer/AnimationTree
+
+# Get the gravity from the project settings to be synced with RigidBody nodes.
+var gravity = ProjectSettings.get_setting(\"physics/3d/default_gravity\")
+
+@onready var camera = $SpringArm3D/Camera3D
+@onready var cameraNode = $SpringArm3D
+@onready var cameralength = cameraNode.spring_length
+
+@onready var main_scene_root = get_tree().current_scene
+@onready var fire_node = animTree.get(\"parameters/FireShot/request\")
+# Flag to track if the player is in the air or not
+var is_jumping = false
+
+var SPEED = 5.0
+var interpolation_speed = 12.0  
+var interpolation_speed_air = 0.3
+var interpolation_grapple = 5.0  
+var target_velocity = Vector3.ZERO  
+var grapple_velocity = Vector3.ZERO
+var final_velocity = Vector3.ZERO  
+
+var grapple_target = Vector3.ZERO
+var grappling_to = Vector3.ZERO
+var is_grappling = false
+var Grapplemesh
+var mesh_instance
+
+@export var grapple_force: float = 50.0
+@export var max_grapple_distance: float = 70.0
+@onready var indicator = get_node(\"/root/Main scene/CanvasLayer/Indicator\")
+
+var is_aiming = false
+var can_grapple = false
+var alternatefire = false
+
+@onready var grapple_marker = get_node(\"/root/Main scene/GrappleMarker\")
+@onready var statPanel : Panel = get_node(\"/root/Main scene/CanvasLayer/Indicator/RightCenter/StatPanel\")
+
+@onready var healthText : Label = get_node(\"/root/Main scene/CanvasLayer/Indicator/TextureRect/TextureProgressBar2/CenterContainer/Label\")
+@onready var healthBar : TextureProgressBar = get_node(\"/root/Main scene/CanvasLayer/Indicator/TextureRect/TextureProgressBar2\")
+@onready var expText : Label = get_node(\"/root/Main scene/CanvasLayer/Indicator/TextureRect2/TextureProgressBar3/CenterContainer/Label\")
+@onready var expBar : TextureProgressBar = get_node(\"/root/Main scene/CanvasLayer/Indicator/TextureRect2/TextureProgressBar3\")
+
+@export var statpoints : int = 5
+@export var spentpoints : int = 0
+
+@export var level = 1
+@export var currentEXP = 0
+@export var maxEXP = 100
+
+@export var initcurrentHealth = 50
+@export var initmaxHealth = 50
+@export var initminDamage = 20
+@export var initmaxDamage = 30
+@export var initSPEED = 5.0
+@export var initJUMP_VELOCITY = 10.0 
+@export var initAOE = 2.0
+@export var inithealthRegen = 2
+
+@export var currentHealth = initcurrentHealth
+@export var maxHealth = initmaxHealth
+@export var minDamage = initminDamage
+@export var maxDamage = initmaxDamage
+@export var statSpeed = initSPEED
+@export var JUMP_VELOCITY = initJUMP_VELOCITY
+@export var AOE = initAOE
+@export var healthRegen = inithealthRegen
+
+
+@export var healthStep = 30
+@export var damageStep = 1.12
+@export var speedStep = 1.0
+@export var jumpStep = 1.0
+@export var AOEStep = 0.4
+
+var BOUNCE_FORCE_UP = 5.0  # The bounce force when the player hits a wall
+var LEAP_FORCE = 50  # The bounce force when the player hits a wall
+
+var cameraEnabled = true
+
+func _ready():
+	# Set the cursor to hidden for mouse look
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	animTree.active = true
+	animTree.set(\"parameters/StateMachine/conditions/Jumping\",false)
+	
+	statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+	
+	statPanel.get_node(\"StatRows/Hlth/Stat\").text = str(maxHealth)
+	statPanel.get_node(\"StatRows/Dmg/Stat\").text = str(minDamage)+\" - \"+str(maxDamage)
+	statPanel.get_node(\"StatRows/Spd/Stat\").text = str(SPEED)
+	statPanel.get_node(\"StatRows/Jump/Stat\").text = str(JUMP_VELOCITY)
+	statPanel.get_node(\"StatRows/AOE/Stat\").text = str(AOE)
+	
+	currentHealth = maxHealth / 2
+
+func _input(event):
+	if cameraEnabled:
+		# Check if the left mouse button was clicked
+		if !Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and laserFired == false:
+				fire_laser()
+				laserFired = true
+		
+		if event is InputEventKey and Input.is_key_pressed(KEY_E) and event.pressed and laserFired == false:
+			fire_laser()
+			laserFired = true
+		
+		if Input.is_key_pressed(KEY_E) == false:
+			laserFired = false
+	
+	if event is InputEventKey:
+		if event.pressed and event.keycode == KEY_ALT:
+			if cameraEnabled:
+				cameraEnabled = false
+				Input.set_mouse_mode(Input.MOUSE_MODE_CONFINED)
+			else:
+				cameraEnabled = true
+				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		
+		if statPanel.is_open:
+			if event.pressed and event.keycode == KEY_1:
+				_on_button_pressed()
+			elif event.pressed and event.keycode == KEY_2:
+				_on_button_2_pressed()
+			elif event.pressed and event.keycode == KEY_3:
+				_on_button_3_pressed()
+			elif event.pressed and event.keycode == KEY_4:
+				_on_button_4_pressed()
+			elif event.pressed and event.keycode == KEY_5:
+				_on_button_5_pressed()
+		
+		if event.pressed and event.keycode == KEY_B:
+			statpoints += 1
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+	
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			cameralength = minf(MAXZOOM,cameralength + 0.5)
+			
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			cameralength = maxf(MINZOOM,cameralength - 0.5)
+			
+	
+func _process(delta):
+	cameraNode.spring_length = lerp(cameraNode.spring_length,cameralength,delta*4)
+	
+	if cameraEnabled:
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			camera.fov = lerp(camera.fov,40.0,lerp_speed*delta);		
+		elif Input.is_key_pressed(KEY_CTRL):
+			camera.fov = lerp(camera.fov,80.0,lerp_speed*delta);
+		else:
+			camera.fov = lerp(camera.fov,65.0,lerp_speed*delta);
+			
+			
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			scan_grapple()
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+				fire_grapple()
+		else:
+			is_aiming = false
+			grapple_marker.visible = false
+	
+	if currentHealth < maxHealth:
+		currentHealth += healthRegen * delta
+	else:
+		currentHealth = maxHealth
+	
+	healthText.text = str(round(currentHealth)) +\" / \"+str(maxHealth)
+	healthBar.value = float(currentHealth)/float(maxHealth)*100.0
+	
+	if currentEXP > maxEXP:
+		currentEXP -= maxEXP
+		statpoints += 1
+		statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+		
+	expText.text = str(round(currentEXP)) +\" / \"+str(maxEXP)
+	expBar.value = float(currentEXP)/float(maxEXP)*100
+	
+	
+func _physics_process(delta):
+	
+	var mouse_movement : Vector2 = Input.get_last_mouse_velocity()
+
+	# Horizontal rotation (Y-axis) for the sphere
+	if cameraEnabled:
+		cameraNode.rotate_x(-mouse_movement.y * mouse_sensitivity * delta)
+	
+	# Check for Escape key to release the mouse capture
+	if Input.is_action_just_pressed(\"ui_cancel\"):  # Escape button
+		if !statPanel.is_open:
+			get_tree().quit()
+		else:
+			statPanel.is_open = false
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+			statPanel.target_x = 0
+
+	if Input.is_action_just_pressed(\"ui_accept\"):
+		if is_grappling:
+			is_grappling = false
+			velocity.y = JUMP_VELOCITY
+			Grapplemesh.clear_surfaces()
+
+	# Handle jump (spacebar) - trigger on press and reset on release
+	if Input.is_action_just_pressed(\"ui_accept\") and is_on_floor() and not is_jumping:
+		velocity.y = JUMP_VELOCITY
+		is_jumping = true  # Set jumping to true after jump
+
+	animTree.set(\"parameters/StateMachine/conditions/Jumping\",is_jumping)
+	animTree.set(\"parameters/StateMachine/conditions/notJumping\",!is_jumping)
+	
+	animTree.set(\"parameters/StateMachine/conditions/Grappled\",is_grappling)
+	animTree.set(\"parameters/StateMachine/conditions/NotGrappled\",!is_grappling)
+	
+	# Handle movement with WASD input (or arrows)
+	var input_dir = Input.get_vector(\"ui_left\", \"ui_right\", \"ui_up\", \"ui_down\")
+	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y))
+	
+	if Input.is_key_pressed(KEY_CTRL):
+		SPEED = statSpeed * 2
+		input_dir = input_dir * 1.5
+	else:
+		SPEED = statSpeed
+		
+	current_dir = lerp(current_dir,input_dir,5*delta)
+	
+	animTree.set(\"parameters/StateMachine/BlendSpace2D/blend_position\",Vector2(current_dir.x,-current_dir.y))
+	
+	if is_grappling:
+		var distance_to_grapple = grappling_to - position
+		var centeredPos = Vector3(position.x,position.y+1,position.z)
+		update_grapple(centeredPos,grappling_to)
+		if abs(distance_to_grapple.length()) < 5.0:
+			is_grappling = false
+			Grapplemesh.clear_surfaces()
+		
+		grapple_velocity =  distance_to_grapple * 3
+	else:
+		grapple_velocity = Vector3.ZERO
+	
+	
+
+	if direction:
+		if is_grappling:
+			target_velocity.x = direction.x * SPEED * 3
+			target_velocity.z = direction.z * SPEED * 3
+		else:
+			target_velocity.x = direction.x * SPEED
+			target_velocity.z = direction.z * SPEED
+			
+	else:
+		target_velocity.x = move_toward(target_velocity.x, 0, interpolation_speed*delta * 5)
+		target_velocity.z = move_toward(target_velocity.z, 0, interpolation_speed*delta * 5)
+	
+	
+	
+	final_velocity = target_velocity + grapple_velocity / 2
+	
+	if is_grappling:
+		velocity.y = lerp(velocity.y, grapple_velocity.y, interpolation_grapple * delta)
+
+	if not is_on_floor():
+		if is_grappling == false:
+			velocity.y -= gravity * delta * 2.0
+			
+		is_jumping = true  # The player is now in the air (jumping or falling)
+		if is_grappling:
+			velocity.x = lerp(velocity.x, final_velocity.x, interpolation_grapple * delta)
+			velocity.z = lerp(velocity.z, final_velocity.z, interpolation_grapple * delta)
+		else:
+			velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed_air * delta)
+			velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed_air * delta)
+	else:
+		is_jumping = false
+		velocity.x = lerp(velocity.x, final_velocity.x, interpolation_speed * delta)
+		velocity.z = lerp(velocity.z, final_velocity.z, interpolation_speed * delta)
+
+	# Move the character and slide based on velocity
+	move_and_slide()
+
+	# Detect if the player is colliding with any object
+	if is_colliding():
+		# Check if Space is pressed to trigger a bounce off the collision object
+		if Input.is_action_just_pressed(\"ui_accept\"):
+			apply_bounce()
+
+	
+	if cameraEnabled:
+		mouse_movement = Input.get_last_mouse_velocity()
+		rotate_y(-mouse_movement.x * mouse_sensitivity * delta)
+
+# Check if the player is colliding with an object
+func is_colliding() -> bool:
+	# Use `get_slide_collision` to check if the character is colliding
+	for i in range(get_slide_collision_count()):
+		var collision = get_slide_collision(i)
+		if collision:  # If a collider exists
+			# You can check the object name or group here if needed
+			return true
+	return false
+
+# Apply a bouncing effect to the player's velocity when colliding with an object
+func apply_bounce():
+	# Apply a vertical force to simulate a bounce (you can adjust the strength)
+	velocity.y = BOUNCE_FORCE_UP  # Apply upward force on bounce
+
+	# Optional: Reduce horizontal velocity to make it less \"slippery\" after bouncing
+	velocity.x = velocity.x + (-get_collision_vector().x * 50)  # Reduce horizontal speed on X axis after bounce
+	velocity.z = velocity.z + (-get_collision_vector().z * 50) # Reduce horizontal speed on Z axis after bounce
+
+# Get the vector from the player to the colliding object
+func get_collision_vector() -> Vector3:
+	for i in range(get_slide_collision_count()):
+		var collision = get_slide_collision(i)
+		if collision:
+			# Get the point of contact with the colliding object
+			var collision_point = collision.get_position()
+			# Calculate the vector from the player to the collision point
+			var collision_vector = collision_point - global_position
+
+			return collision_vector
+	return Vector3.ZERO  # Return zero vector if no collision
+
+
+func fire_laser():
+	# Alternate fire animation
+	if alternatefire:
+		animTree.set(\"parameters/FireShot/request\", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	else:
+		animTree.set(\"parameters/FireSecond/request\", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	alternatefire = !alternatefire
+
+	# Raycast forward from camera
+	var ray_origin = cameraNode.global_transform.origin
+	var ray_direction = -cameraNode.global_transform.basis.z  # In Godot, -Z is forward
+	var ray_length = 1000.0  # Laser range in units
+
+	var space_state = get_world_3d().direct_space_state
+	var query = PhysicsRayQueryParameters3D.new()
+	query.from = ray_origin
+	query.to = ray_origin + ray_direction * ray_length
+	query.collision_mask = 1  # Adjust collision mask as needed
+
+	var result = space_state.intersect_ray(query)
+
+	if result:
+		var hit_position = result.position
+		var hit_normal = result.normal
+		var collider = result.collider
+
+		# 🔥 Create explosion at hit point
+		spawn_explosion(hit_position)
+
+		# ⚡ Create lightning beam from gun to hit point
+		spawn_lightning_beam(ray_origin, hit_position)
+	else:
+		# If nothing hit, just spawn lightning beam at max range
+		var end_point = ray_origin + ray_direction * ray_length
+		spawn_lightning_beam(ray_origin, end_point)
+
+func spawn_explosion(position: Vector3):
+	var explosion = preload(\"res://explosionscene.tscn\").instantiate()
+	explosion.global_transform.origin = position
+	explosion.minDamage = minDamage
+	explosion.maxDamage = maxDamage
+	explosion.scale = Vector3(AOE,AOE,AOE)
+	explosion.aoeScale = AOE
+	main_scene_root.add_child(explosion)
+
+func spawn_lightning_beam(start_pos: Vector3, end_pos: Vector3):
+	var lightning = preload(\"res://LightningBeam.tscn\").instantiate()
+	
+	var skeleton = get_node(\"Model/Catty/Back/Skeleton3D\")
+	lightning.skeleton = skeleton
+	if alternatefire:
+		lightning.bone_name = \"mixamorig_LeftHand\"
+	else:
+		lightning.bone_name = \"mixamorig_RightHand\"
+		
+	
+	lightning.target_position = end_pos
+	main_scene_root.add_child(lightning) 
+	# After adding to the scene:
+	
+	# Animate fade
+	var fade_in_time = 0.2
+	var fade_out_time = 0.2
+	
+	# Get the child MeshInstance3D
+	var mesh_instance = lightning.get_node(\"MeshInstance3D\")  # Replace \"MeshInstance3D\" with your actual node name if needed
+	if mesh_instance:
+		var mat = mesh_instance.material_override
+		if mat is ShaderMaterial:
+			var shader_mat = mat as ShaderMaterial
+			var tween = get_tree().create_tween()
+			tween.tween_method(
+				func(value):
+					shader_mat.set_shader_parameter(\"fade_alpha\", value),
+				0.0, 1.0, fade_in_time
+				)
+			tween.tween_method(
+				func(value):
+					shader_mat.set_shader_parameter(\"fade_alpha\", value),
+				1.0, 0.0, fade_out_time
+			)
+			tween.tween_callback(Callable(lightning, \"queue_free\"))
+		else:
+			push_error(\"ShaderMaterial not found on the beam's MeshInstance3D!\")
+	else:
+		push_error(\"No MeshInstance3D found on lightning beam!\")
+
+
+func scan_grapple():
+	if is_grappling == false:
+		is_aiming = true
+		var space_state = get_world_3d().direct_space_state
+
+		var from = cameraNode.global_transform.origin
+		var to = camera.global_transform.origin + -camera.global_transform.basis.z * max_grapple_distance  # Ray 20 units forward
+
+		var ray_params = PhysicsRayQueryParameters3D.new()
+		ray_params.from = from
+		ray_params.to = to
+		ray_params.exclude = [self]
+
+		var result = space_state.intersect_ray(ray_params)
+
+		if result:
+			grapple_marker.global_position = result[\"position\"]
+			grapple_marker.visible = true
+			
+			grapple_target.x = result[\"position\"].x
+			grapple_target.y = result[\"position\"].y
+			grapple_target.z = result[\"position\"].z
+			can_grapple = true
+			
+			
+func fire_grapple():
+	if can_grapple && is_grappling == false:
+		can_grapple = false
+		is_grappling = true
+		grappling_to = grapple_target
+		
+		Grapplemesh = ImmediateMesh.new()
+		Grapplemesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		
+		var centeredPos = Vector3(position.x,position.y+1,position.z)
+		Grapplemesh.surface_add_vertex(centeredPos)
+		Grapplemesh.surface_add_vertex(grappling_to)
+		Grapplemesh.surface_end()
+
+		mesh_instance = MeshInstance3D.new()
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color.WHITE
+		mesh_instance.material_override = mat
+		mesh_instance.mesh = Grapplemesh
+		main_scene_root.add_child(mesh_instance)
+		
+		var ShootSpeed = grappling_to - position
+		velocity = ShootSpeed.limit_length(7)
+		
+		
+func update_grapple(a: Vector3, b: Vector3):
+	Grapplemesh.clear_surfaces()
+	Grapplemesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	Grapplemesh.surface_add_vertex(a)
+	Grapplemesh.surface_add_vertex(b)
+	Grapplemesh.surface_end()
+
+	mesh_instance = MeshInstance3D.new()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color.WHITE
+	mesh_instance.material_override = mat
+	mesh_instance.mesh = Grapplemesh
+
+
+func _on_button_pressed():
+	#HealthIncrease
+	
+	if Input.is_key_pressed(KEY_SHIFT):
+		while statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			maxHealth += healthStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Hlth/Stat\").text = str(maxHealth)
+	else:
+		if statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			maxHealth += healthStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Hlth/Stat\").text = str(maxHealth)
+
+
+func _on_button_2_pressed():
+	#DamageIncrease
+
+	if Input.is_key_pressed(KEY_SHIFT):
+		while statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			minDamage *= damageStep
+			maxDamage *= damageStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Dmg/Stat\").text = str(round(minDamage))+\" - \"+str(round(maxDamage))
+	else:
+		if statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			minDamage *= damageStep
+			maxDamage *= damageStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Dmg/Stat\").text = str(round(minDamage))+\" - \"+str(round(maxDamage))
+
+
+func _on_button_3_pressed():
+	#SpeedIncrease
+	
+	if Input.is_key_pressed(KEY_SHIFT):
+		while statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			statSpeed += speedStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Spd/Stat\").text = str(statSpeed)
+	else:
+		if statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			statSpeed += speedStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Spd/Stat\").text = str(statSpeed)
+
+
+func _on_button_4_pressed():
+	#JumpIncrease
+	
+	if Input.is_key_pressed(KEY_SHIFT):
+		while statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			JUMP_VELOCITY += jumpStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Jump/Stat\").text = str(JUMP_VELOCITY)
+	else:
+		if statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			JUMP_VELOCITY += jumpStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/Jump/Stat\").text = str(JUMP_VELOCITY)
+			
+	BOUNCE_FORCE_UP = JUMP_VELOCITY
+
+func _on_button_5_pressed():
+	#AOEIncrease
+	
+	if Input.is_key_pressed(KEY_SHIFT):
+		while statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			AOE += AOEStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(round(AOE*10)/10)
+	else:
+		if statpoints > 0:
+			statpoints -= 1
+			spentpoints += 1
+			AOE += AOEStep
+			statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+			statPanel.get_node(\"StatRows/AOE/Stat\").text = str(round(AOE*10)/10)
+
+func addSP(points):
+	statpoints += points
+	statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+	
+
+func _on_reset_stats_pressed():
+	maxHealth = initmaxHealth
+	minDamage = initminDamage
+	maxDamage = initmaxDamage
+	statSpeed = initSPEED
+	JUMP_VELOCITY = initJUMP_VELOCITY
+	AOE = initAOE
+	healthRegen = inithealthRegen
+	statpoints += spentpoints
+	spentpoints = 0
+	BOUNCE_FORCE_UP = JUMP_VELOCITY
+	
+	statPanel.get_node(\"CenterContainer/Label\").text = str(statpoints)
+	
+	statPanel.get_node(\"StatRows/Hlth/Stat\").text = str(maxHealth)
+	statPanel.get_node(\"StatRows/Dmg/Stat\").text = str(minDamage)+\" - \"+str(maxDamage)
+	statPanel.get_node(\"StatRows/Spd/Stat\").text = str(statSpeed)
+	statPanel.get_node(\"StatRows/Jump/Stat\").text = str(JUMP_VELOCITY)
+	statPanel.get_node(\"StatRows/AOE/Stat\").text = str(AOE)
+"
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2gfj3"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_d6svt"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_00e7b"]
+transparency = 1
+albedo_color = Color(1, 1, 1, 0.670588)
+albedo_texture = ExtResource("5_mgtrb")
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 7.5
+billboard_mode = 1
+billboard_keep_scale = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4eiq8"]
+specular_mode = 1
+albedo_texture = ExtResource("3_ky4sv")
+emission = Color(0, 0.309804, 0, 1)
+detail_enabled = true
+detail_albedo = ExtResource("4_sayrb")
+uv1_scale = Vector3(22.51, 22.51, 22.51)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3p5rk"]
+size = Vector3(1.07422, 1, 1.06934)
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_cpebo"]
+panorama = ExtResource("4_6jfw5")
+
+[sub_resource type="Sky" id="Sky_kahkq"]
+sky_material = SubResource("PanoramaSkyMaterial_cpebo")
+
+[sub_resource type="Environment" id="Environment_qdd02"]
+background_mode = 2
+background_energy_multiplier = 0.4
+sky = SubResource("Sky_kahkq")
+glow_enabled = true
+glow_intensity = 2.0
+glow_bloom = 0.5
+glow_hdr_threshold = 0.6
+fog_light_color = Color(0.847059, 0.847059, 0.92549, 1)
+fog_light_energy = 0.73
+fog_density = 0.039
+fog_height = 3.0
+volumetric_fog_density = 0.0605
+volumetric_fog_albedo = Color(0.87451, 0.623529, 0.168627, 1)
+volumetric_fog_emission = Color(0.858824, 0.807843, 0.933333, 1)
+volumetric_fog_length = 7.16
+
+[sub_resource type="GDScript" id="GDScript_6obk7"]
+resource_name = "ControlScript"
+script/source = "extends Control
+
+func _ready():
+	anchor_left = 0.0
+	anchor_top = 0.0
+	anchor_right = 1.0
+	anchor_bottom = 1.0
+
+	offset_left = 0.0
+	offset_top = 0.0
+	offset_right = 0.0
+	offset_bottom = 0.0
+
+	queue_redraw()
+
+func _process(_delta):
+	queue_redraw()
+
+func _draw():
+	var center = get_size() / 2
+	var line_length = 10
+	var line_color = Color.WHITE
+	var thickness = 2
+
+	draw_line(center - Vector2(line_length, 0),
+		center + Vector2(line_length, 0),
+		line_color,
+		thickness)
+
+	# Vertical line
+	draw_line(center - Vector2(0, line_length),
+		center + Vector2(0, line_length),
+		line_color,
+		thickness)
+"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dtcci"]
+
+[sub_resource type="Gradient" id="Gradient_u5d3p"]
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_mrw48"]
+gradient = SubResource("Gradient_u5d3p")
+width = 1
+height = 1
+
+[sub_resource type="Gradient" id="Gradient_004f1"]
+colors = PackedColorArray(0, 0, 0, 1, 0.154876, 0.154876, 0.154876, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_s61dq"]
+gradient = SubResource("Gradient_004f1")
+width = 300
+height = 30
+
+[sub_resource type="Gradient" id="Gradient_i1km4"]
+colors = PackedColorArray(0.556863, 0, 0, 1, 0.472887, 0.354569, 0, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_jesfj"]
+gradient = SubResource("Gradient_i1km4")
+width = 300
+height = 30
+
+[sub_resource type="Gradient" id="Gradient_nimgk"]
+colors = PackedColorArray(0.55705, 0.764086, 0, 1, 0.700816, 0.700817, 0, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_yy3jv"]
+gradient = SubResource("Gradient_nimgk")
+width = 300
+height = 30
+
+[node name="Main scene" type="Node3D"]
+
+[node name="CharacterBody3D" type="CharacterBody3D" parent="."]
+transform = Transform3D(-0.0891023, 0, -0.996022, 0, 1, 0, 0.996022, 0, -0.0891023, -18.3475, 0.37348, 8.4364)
+collision_layer = 2
+script = SubResource("GDScript_v1jfx")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CharacterBody3D"]
+transform = Transform3D(0.92, 0, 5.96046e-08, 0, 0.92, 0, -5.96046e-08, 0, 0.92, 0, 0.967742, 0)
+shape = SubResource("CapsuleShape3D_2gfj3")
+
+[node name="Model" type="Node3D" parent="CharacterBody3D"]
+transform = Transform3D(1, 0, 1.78814e-07, 0, 1, 0, -1.78814e-07, 0, 1, 0, 0.0808781, 0)
+
+[node name="Catty" parent="CharacterBody3D/Model" instance=ExtResource("2_0jr8n")]
+transform = Transform3D(-1, 0, -2.68221e-07, 0, 1, 0, 2.68221e-07, 0, -1, 0, -0.0184845, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CharacterBody3D"]
+transform = Transform3D(1, 0, 2.98023e-07, 0, 1, 0, -2.98023e-07, 0, 1, 0.434232, 2.51926, 0.150762)
+spring_length = 8.0
+margin = 2.0
+
+[node name="Camera3D" type="Camera3D" parent="CharacterBody3D/SpringArm3D"]
+transform = Transform3D(1, 0, 8.04663e-07, 0, 1, 0, -8.04663e-07, 0, 1, 0, 0, 0)
+fov = 65.0
+
+[node name="GrappleMarker" type="Node3D" parent="."]
+transform = Transform3D(-0.912641, 0, -0.408761, 0, 1, 0, 0.408761, 0, -0.912641, -2.69452, -0.363612, -0.934242)
+visible = false
+
+[node name="CSGMesh3D" type="CSGMesh3D" parent="GrappleMarker"]
+mesh = SubResource("QuadMesh_d6svt")
+material = SubResource("StandardMaterial3D_00e7b")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="GrappleMarker"]
+light_size = 10.0
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+transform = Transform3D(1032.19, 0, 0, 0, 1, 0, 0, 0, 981.481, 78.7369, 7.62939e-06, 68.4203)
+
+[node name="CSGBox3D" type="CSGBox3D" parent="StaticBody3D"]
+transform = Transform3D(1.07502, -5.65981e-07, -3.9992e-11, 6.08439e-07, 1, -7.81447e-14, 3.9992e-11, 7.26705e-14, 1.07502, 0, 0, 0)
+use_collision = true
+material = SubResource("StandardMaterial3D_4eiq8")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D" groups=["ground"]]
+transform = Transform3D(1, -5.68434e-14, 2.08714e-11, 4.4421e-07, 1, 2.38419e-07, 8.09749e-12, 5.19001e-15, 1, 0, 0, 0)
+shape = SubResource("BoxShape3D_3p5rk")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_qdd02")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.239741, 0.759542, 0.604666, -0.742461, -0.544737, 0.389888, 0.62552, -0.355469, 0.694526, -12.1117, 9.423, 0)
+light_color = Color(0.882353, 0.831373, 0.952941, 1)
+light_energy = 0.395
+shadow_enabled = true
+
+[node name="LevelController" type="Node3D" parent="."]
+script = ExtResource("4_qgdw0")
+park_chance = 0.4
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = SubResource("GDScript_6obk7")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Indicator" type="Control" parent="CanvasLayer"]
+material = SubResource("ShaderMaterial_dtcci")
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ProgressBar" type="ProgressBar" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 33.0
+offset_top = -50.0
+offset_right = 195.0
+offset_bottom = -23.0
+grow_vertical = 0
+theme_override_fonts/font = ExtResource("6_l0jxb")
+
+[node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 29.0
+offset_top = -73.0
+offset_right = 198.0
+offset_bottom = -50.0
+grow_vertical = 0
+theme_override_fonts/normal_font = ExtResource("6_l0jxb")
+bbcode_enabled = true
+text = "[center]Level Progress:[/center]"
+fit_content = true
+scroll_active = false
+autowrap_mode = 2
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -171.0
+offset_top = -80.0
+offset_right = -47.0
+offset_bottom = -57.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "Experience:"
+horizontal_alignment = 2
+
+[node name="RichTextLabel2" type="RichTextLabel" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 34.0
+offset_top = -149.0
+offset_right = 203.0
+offset_bottom = -126.0
+grow_vertical = 0
+theme_override_fonts/normal_font = ExtResource("6_l0jxb")
+bbcode_enabled = true
+text = "Level:"
+fit_content = true
+scroll_active = false
+autowrap_mode = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = -37.0
+offset_top = -352.0
+offset_right = 263.0
+offset_bottom = -52.0
+grow_vertical = 0
+scale = Vector2(0.2, 0.2)
+pivot_offset = Vector2(150, 150)
+
+[node name="TextureProgressBar" type="TextureProgressBar" parent="CanvasLayer/Indicator/CenterContainer"]
+layout_mode = 2
+fill_mode = 4
+texture_under = ExtResource("6_y88hj")
+texture_progress = ExtResource("7_avhlp")
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/CenterContainer"]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_fonts/font = ExtResource("6_l0jxb")
+theme_override_font_sizes/font_size = 141
+text = "10"
+
+[node name="LevelContainer" type="CenterContainer" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 88.0
+offset_top = -169.0
+offset_right = 196.0
+offset_bottom = -59.0
+grow_vertical = 0
+
+[node name="LevelContainerLabel" type="Label" parent="CanvasLayer/Indicator/LevelContainer"]
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_fonts/font = ExtResource("6_l0jxb")
+theme_override_font_sizes/font_size = 61
+text = "10"
+
+[node name="RightCenter" type="Panel" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="StatPanel" type="Panel" parent="CanvasLayer/Indicator/RightCenter"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -309.0
+offset_top = -152.0
+offset_bottom = 153.0
+grow_horizontal = 0
+grow_vertical = 2
+script = ExtResource("9_xlh3r")
+
+[node name="StatRows" type="VBoxContainer" parent="CanvasLayer/Indicator/RightCenter/StatPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -136.5
+offset_top = -117.5
+offset_right = 136.5
+offset_bottom = 118.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Hlth" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "1. Health"
+
+[node name="Button" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Hlth"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -16.0
+offset_top = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+grow_vertical = 2
+focus_mode = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Hlth/Button"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -12.0
+offset_right = 5.0
+offset_bottom = 11.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "+"
+
+[node name="Stat" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Hlth"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -9.5
+offset_bottom = 9.5
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Dmg" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "2. Damage"
+
+[node name="Button2" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Dmg"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -16.0
+offset_top = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+grow_vertical = 2
+focus_mode = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Dmg/Button2"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -12.0
+offset_right = 5.0
+offset_bottom = 11.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "+"
+
+[node name="Stat" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Dmg"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -9.5
+offset_bottom = 9.5
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Spd" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "3. Speed"
+
+[node name="Button3" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Spd"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -16.0
+offset_top = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+grow_vertical = 2
+focus_mode = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Spd/Button3"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -12.0
+offset_right = 5.0
+offset_bottom = 11.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "+"
+
+[node name="Stat" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Spd"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -9.5
+offset_bottom = 9.5
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Jump" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "4. Jump Height"
+
+[node name="Button4" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Jump"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -16.0
+offset_top = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+grow_vertical = 2
+focus_mode = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Jump/Button4"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -12.0
+offset_right = 5.0
+offset_bottom = 11.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "+"
+
+[node name="Stat" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Jump"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -9.5
+offset_bottom = 9.5
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AOE" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "5. Area of effect:"
+
+[node name="Button5" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/AOE"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -16.0
+offset_top = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+grow_vertical = 2
+focus_mode = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/AOE/Button5"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -12.0
+offset_right = 5.0
+offset_bottom = 11.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "+"
+
+[node name="Stat" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/AOE"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -9.5
+offset_bottom = 9.5
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -112.0
+offset_top = -94.5
+offset_right = 114.0
+offset_bottom = -71.5
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "Stat points available:"
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/Indicator/RightCenter/StatPanel"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -29.0
+offset_top = -66.0
+offset_right = 29.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/RightCenter/StatPanel/CenterContainer"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+theme_override_font_sizes/font_size = 56
+text = "1
+"
+script = ExtResource("9_yww3e")
+
+[node name="ResetStats" type="Button" parent="CanvasLayer/Indicator/RightCenter/StatPanel"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -20.0
+offset_bottom = 20.0
+grow_horizontal = 0
+focus_mode = 0
+theme_override_fonts/font = ExtResource("6_l0jxb")
+theme_override_font_sizes/font_size = 16
+text = "Reset Stats"
+
+[node name="TextureRect" type="TextureRect" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -152.5
+offset_top = -52.0
+offset_right = 149.5
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+texture = SubResource("GradientTexture2D_mrw48")
+
+[node name="TextureProgressBar2" type="TextureProgressBar" parent="CanvasLayer/Indicator/TextureRect"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -15.0
+offset_right = 150.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+value = 95.0
+texture_under = SubResource("GradientTexture2D_s61dq")
+texture_progress = SubResource("GradientTexture2D_jesfj")
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/Indicator/TextureRect/TextureProgressBar2"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/TextureRect/TextureProgressBar2/CenterContainer"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "Health"
+
+[node name="TextureRect2" type="TextureRect" parent="CanvasLayer/Indicator"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -322.0
+offset_top = -52.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+texture = SubResource("GradientTexture2D_mrw48")
+
+[node name="TextureProgressBar3" type="TextureProgressBar" parent="CanvasLayer/Indicator/TextureRect2"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -15.0
+offset_right = 150.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+value = 95.0
+texture_under = SubResource("GradientTexture2D_s61dq")
+texture_progress = SubResource("GradientTexture2D_yy3jv")
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/Indicator/TextureRect2/TextureProgressBar3"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="CanvasLayer/Indicator/TextureRect2/TextureProgressBar3/CenterContainer"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("6_l0jxb")
+text = "Experience"
+
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Hlth/Button" to="CharacterBody3D" method="_on_button_pressed"]
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Dmg/Button2" to="CharacterBody3D" method="_on_button_2_pressed"]
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Spd/Button3" to="CharacterBody3D" method="_on_button_3_pressed"]
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/Jump/Button4" to="CharacterBody3D" method="_on_button_4_pressed"]
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/StatRows/AOE/Button5" to="CharacterBody3D" method="_on_button_5_pressed"]
+[connection signal="pressed" from="CanvasLayer/Indicator/RightCenter/StatPanel/ResetStats" to="CharacterBody3D" method="_on_reset_stats_pressed"]

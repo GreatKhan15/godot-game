@@ -1,22 +1,22 @@
 [gd_resource type="AnimationNodeBlendTree" load_steps=25 format=3 uid="uid://b37vuc2ey7p5q"]
 
 [sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_jmj17"]
-animation = &"CastLeft"
+animation = &"PunchLeft"
 
 [sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_j1hef"]
-animation = &"CastRight"
+animation = &"PunchRight"
 
 [sub_resource type="AnimationNodeOneShot" id="AnimationNodeOneShot_nwsr2"]
 filter_enabled = true
-filters = ["Back/Skeleton3D:mixamorig_LeftArm", "Back/Skeleton3D:mixamorig_LeftForeArm", "Back/Skeleton3D:mixamorig_LeftHand", "Back/Skeleton3D:mixamorig_LeftHandIndex1", "Back/Skeleton3D:mixamorig_LeftHandIndex2", "Back/Skeleton3D:mixamorig_LeftHandIndex3", "Back/Skeleton3D:mixamorig_LeftHandIndex4", "Back/Skeleton3D:mixamorig_LeftHandThumb1", "Back/Skeleton3D:mixamorig_LeftHandThumb2", "Back/Skeleton3D:mixamorig_LeftHandThumb4", "Back/Skeleton3D:mixamorig_LeftShoulder", "Back/Skeleton3D:mixamorig_Spine1", "Back/Skeleton3D:mixamorig_Spine2"]
-fadein_time = 0.2
-fadeout_time = 0.3
+filters = ["Back/Skeleton3D:mixamorig_LeftArm", "Back/Skeleton3D:mixamorig_LeftForeArm", "Back/Skeleton3D:mixamorig_LeftHand", "Back/Skeleton3D:mixamorig_LeftHandIndex1", "Back/Skeleton3D:mixamorig_LeftHandIndex2", "Back/Skeleton3D:mixamorig_LeftHandIndex3", "Back/Skeleton3D:mixamorig_LeftHandIndex4", "Back/Skeleton3D:mixamorig_LeftHandThumb1", "Back/Skeleton3D:mixamorig_LeftHandThumb2", "Back/Skeleton3D:mixamorig_LeftHandThumb3", "Back/Skeleton3D:mixamorig_LeftHandThumb4", "Back/Skeleton3D:mixamorig_LeftShoulder", "Back/Skeleton3D:mixamorig_Spine1", "Back/Skeleton3D:mixamorig_Spine2"]
+fadein_time = 0.3
+fadeout_time = 0.6
 
 [sub_resource type="AnimationNodeOneShot" id="AnimationNodeOneShot_2ivvj"]
 filter_enabled = true
-filters = ["Back/Skeleton3D:mixamorig_LeftHandIndex1", "Back/Skeleton3D:mixamorig_LeftHandIndex2", "Back/Skeleton3D:mixamorig_LeftHandIndex3", "Back/Skeleton3D:mixamorig_LeftHandIndex4", "Back/Skeleton3D:mixamorig_RightArm", "Back/Skeleton3D:mixamorig_RightForeArm", "Back/Skeleton3D:mixamorig_RightHand", "Back/Skeleton3D:mixamorig_RightHandIndex1", "Back/Skeleton3D:mixamorig_RightHandIndex2", "Back/Skeleton3D:mixamorig_RightHandIndex3", "Back/Skeleton3D:mixamorig_RightHandIndex4", "Back/Skeleton3D:mixamorig_RightHandThumb1", "Back/Skeleton3D:mixamorig_RightHandThumb2", "Back/Skeleton3D:mixamorig_RightHandThumb3", "Back/Skeleton3D:mixamorig_RightHandThumb4", "Back/Skeleton3D:mixamorig_RightShoulder", "Back/Skeleton3D:mixamorig_Spine1", "Back/Skeleton3D:mixamorig_Spine2", "Node/Skeleton3D:mixamorigHead", "Node/Skeleton3D:mixamorigNeck", "Node/Skeleton3D:mixamorigRightArm", "Node/Skeleton3D:mixamorigRightForeArm", "Node/Skeleton3D:mixamorigRightHand", "Node/Skeleton3D:mixamorigRightShoulder", "Node/Skeleton3D:mixamorigSpine2"]
-fadein_time = 0.2
-fadeout_time = 0.3
+filters = ["Back/Skeleton3D:mixamorig_LeftHandIndex1", "Back/Skeleton3D:mixamorig_LeftHandIndex2", "Back/Skeleton3D:mixamorig_RightArm", "Back/Skeleton3D:mixamorig_RightForeArm", "Back/Skeleton3D:mixamorig_RightHand", "Back/Skeleton3D:mixamorig_RightHandIndex1", "Back/Skeleton3D:mixamorig_RightHandIndex2", "Back/Skeleton3D:mixamorig_RightHandIndex3", "Back/Skeleton3D:mixamorig_RightHandIndex4", "Back/Skeleton3D:mixamorig_RightHandThumb1", "Back/Skeleton3D:mixamorig_RightHandThumb2", "Back/Skeleton3D:mixamorig_RightHandThumb3", "Back/Skeleton3D:mixamorig_RightHandThumb4", "Back/Skeleton3D:mixamorig_RightShoulder", "Back/Skeleton3D:mixamorig_Spine2", "Node/Skeleton3D:mixamorigHead", "Node/Skeleton3D:mixamorigNeck", "Node/Skeleton3D:mixamorigRightArm", "Node/Skeleton3D:mixamorigRightForeArm", "Node/Skeleton3D:mixamorigRightHand", "Node/Skeleton3D:mixamorigRightShoulder", "Node/Skeleton3D:mixamorigSpine2"]
+fadein_time = 0.3
+fadeout_time = 0.6
 
 [sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_jrd8d"]
 animation = &"Idle"
@@ -111,9 +111,9 @@ graph_offset = Vector2(-4, -35)
 [sub_resource type="AnimationNodeTimeScale" id="AnimationNodeTimeScale_skmc6"]
 
 [resource]
-graph_offset = Vector2(287, 171)
+graph_offset = Vector2(72.4729, 96.0142)
 nodes/Animation/node = SubResource("AnimationNodeAnimation_j1hef")
-nodes/Animation/position = Vector2(760, 320)
+nodes/Animation/position = Vector2(740, 280)
 "nodes/Animation 2/node" = SubResource("AnimationNodeAnimation_jmj17")
 "nodes/Animation 2/position" = Vector2(920, 440)
 nodes/FireSecond/node = SubResource("AnimationNodeOneShot_nwsr2")
@@ -125,6 +125,6 @@ nodes/StateMachine/position = Vector2(740, 20)
 nodes/TimeScale/node = SubResource("AnimationNodeTimeScale_skmc6")
 nodes/TimeScale/position = Vector2(920, 240)
 "nodes/TimeScale 2/node" = SubResource("AnimationNodeTimeScale_wd8or")
-"nodes/TimeScale 2/position" = Vector2(1080, 420)
+"nodes/TimeScale 2/position" = Vector2(1120, 380)
 nodes/output/position = Vector2(1480, 180)
 node_connections = [&"FireSecond", 0, &"FireShot", &"FireSecond", 1, &"TimeScale 2", &"FireShot", 0, &"StateMachine", &"FireShot", 1, &"TimeScale", &"TimeScale", 0, &"Animation", &"TimeScale 2", 0, &"Animation 2", &"output", 0, &"FireSecond"]

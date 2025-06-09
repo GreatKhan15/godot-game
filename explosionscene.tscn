@@ -79,13 +79,15 @@ emission_ring_inner_radius = 0.0
 radial_velocity_min = 0.2
 radial_velocity_max = 0.4
 gravity = Vector3(0, 0, 0)
+scale_min = 1.5
+scale_max = 1.5
 scale_curve = SubResource("CurveTexture_v3ilv")
 color_ramp = SubResource("GradientTexture1D_8ou5l")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mi4t2"]
 transparency = 1
 vertex_color_use_as_albedo = true
-emission_enabled = true
+albedo_color = Color(1, 1, 1, 0.745098)
 emission = Color(0.917647, 0.917647, 0.219608, 1)
 emission_energy_multiplier = 5.25
 proximity_fade_enabled = true
@@ -115,12 +117,15 @@ emission_ring_inner_radius = 0.0
 radial_velocity_min = 0.2
 radial_velocity_max = 0.4
 gravity = Vector3(0, 0, 0)
+scale_min = 1.5
+scale_max = 1.5
 scale_curve = SubResource("CurveTexture_gkbgk")
 color_ramp = SubResource("GradientTexture1D_rn4jb")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_h4l70"]
 transparency = 1
 vertex_color_use_as_albedo = true
+albedo_color = Color(1, 1, 1, 0.67451)
 emission_enabled = true
 emission = Color(0.117647, 0.117647, 0.00392157, 1)
 emission_energy_multiplier = 5.25
